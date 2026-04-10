@@ -1,0 +1,116 @@
+# SiYuan self-host deployment.
+#
+# Architecture:
+#   - docker-proxy:  locks down the Docker API surface the portal can call.
+#   - portal:        HTTP gateway (login + user management + reverse proxy to kernels).
+#   - siyuan-user-*: kernel containers, created dynamically by the portal on demand.
+#                    NOT declared here; they attach to siyuan-net at runtime.
+#
+# Terminate TLS at an upstream reverse proxy (Caddy / Traefik / nginx). The portal itself
+# runs plain HTTP on port 8080 inside the portal-admin network.
+#
+# First-run bootstrap:
+#   1. Create /srv/siyuan/users on the host (the portal will create per-user subdirs).
+#   2. Set BOOTSTRAP_ADMIN_USER and BOOTSTRAP_ADMIN_PASSWORD in a local .env file.
+#   3. docker compose up --build -d
+#   4. Log in as the bootstrap admin, create real users, then remove the bootstrap env
+#      vars from .env and `docker compose up -d` again.
+#
+# Required .env entries (see .env.example if provided):
+#   PUBLIC_HOSTNAME=notes.example.com       # for CORS/TLS termination
+#   OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+#   OPENAI_API_KEY=sk-local-placeholder
+#   BOOTSTRAP_ADMIN_USER=admin              # first boot only; remove after
+#   BOOTSTRAP_ADMIN_PASSWORD=changeme       # first boot only; remove after
+
+services:
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: siyuan-docker-proxy
+    restart: unless-stopped
+    # Whitelist only the Docker API endpoints the portal actually needs. Every
+    # unlisted endpoint returns 403. This prevents a portal exploit from escalating
+    # to full Docker-daemon control (which is effectively host root).
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      IMAGES: 0
+      VOLUMES: 0
+      EXEC: 0
+      POST: 1
+      # Read-only endpoints are allowed by default; POST=1 turns on container/network
+      # create + start + stop.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - portal-admin
+
+  portal:
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+    image: siyuan-portal:latest
+    container_name: siyuan-portal
+    restart: unless-stopped
+    depends_on:
+      - docker-proxy
+    environment:
+      PORTAL_DB_PATH:              /var/lib/portal/portal.db
+      PORTAL_LISTEN:                :8080
+      PORTAL_DOCKER_HOST:           tcp://docker-proxy:2375
+      PORTAL_DOCKER_NETWORK:        siyuan-net
+      PORTAL_SIYUAN_IMAGE:          siyuan-selfhost:latest
+      PORTAL_WORKSPACE_ROOT:        /srv/siyuan/users
+      PORTAL_SIYUAN_PUID:           "1000"
+      PORTAL_SIYUAN_PGID:           "1000"
+      PORTAL_KERNEL_MEMORY_BYTES:   "1073741824"   # 1 GiB per kernel
+      PORTAL_KERNEL_PIDS_LIMIT:     "512"
+      PORTAL_IDLE_DURATION:         15m
+      PORTAL_OPENAI_BASE_URL:       ${OPENAI_BASE_URL}
+      PORTAL_OPENAI_API_KEY:        ${OPENAI_API_KEY:-}
+      PORTAL_PUBLIC_HOSTNAME:       ${PUBLIC_HOSTNAME:-localhost}
+      PORTAL_BOOTSTRAP_ADMIN_USER:     ${BOOTSTRAP_ADMIN_USER:-}
+      PORTAL_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    volumes:
+      # Host workspaces — the portal spawns kernel containers that bind-mount
+      # per-user subdirectories under here. Must be the same host path inside the
+      # portal container so the orchestrator can pass identical paths into each
+      # kernel container's HostConfig.Binds.
+      - /srv/siyuan/users:/srv/siyuan/users
+      # Portal's own SQLite state (users, sessions, audit log).
+      - portal-db:/var/lib/portal
+    ports:
+      # Plain HTTP. Front this with a TLS-terminating reverse proxy in production.
+      - "8080:8080"
+    networks:
+      - portal-admin
+      - siyuan-net
+
+  # ------------------------------------------------------------------------
+  # Siyuan kernel containers are NOT declared here. The portal creates them at
+  # runtime via the Docker API using the siyuan-selfhost:latest image. Build
+  # that image once with:
+  #
+  #   docker build -f docker/Dockerfile.siyuan-selfhost -t siyuan-selfhost:latest .
+  #
+  # ------------------------------------------------------------------------
+
+networks:
+  # portal-admin carries portal <-> docker-proxy traffic. Internal-only so the
+  # docker-socket-proxy is unreachable from outside the stack.
+  portal-admin:
+    name: portal-admin
+    driver: bridge
+    internal: true
+
+  # siyuan-net carries portal <-> kernel traffic. Internal so kernels have no
+  # direct egress (the portal's OpenAI base URL is the one external hop, and
+  # it's configured to point at an operator-managed local endpoint).
+  siyuan-net:
+    name: siyuan-net
+    driver: bridge
+    internal: true
+
+volumes:
+  portal-db:
