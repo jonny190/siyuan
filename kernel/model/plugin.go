@@ -26,7 +26,6 @@ import (
 	"github.com/88250/gulu"
 	"github.com/siyuan-note/filelock"
 	"github.com/siyuan-note/logging"
-	"github.com/siyuan-note/siyuan/kernel/bazaar"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -47,7 +46,7 @@ type Petal struct {
 func SetPetalEnabled(name string, enabled bool, frontend string) (ret *Petal, err error) {
 	petals := getPetals()
 
-	found, displayName, incompatible, disabledInPublish, disallowInstall := bazaar.ParseInstalledPlugin(name, frontend)
+	found, displayName, incompatible, disabledInPublish, disallowInstall := ParseInstalledPlugin(name, frontend)
 	if !found {
 		logging.LogErrorf("plugin [%s] not found", name)
 		return
@@ -97,21 +96,13 @@ func getPetalByName(name string, petals []*Petal) (ret *Petal) {
 func LoadPetals(frontend string, isPublish bool) (ret []*Petal) {
 	ret = []*Petal{}
 
-	if Conf.Bazaar.PetalDisabled {
-		return
-	}
-
-	if !Conf.Bazaar.Trust {
-		// 移动端没有集市模块，所以要默认开启，桌面端和 Docker 容器需要用户手动确认过信任后才能开启
-		if util.ContainerStd == util.Container || util.ContainerDocker == util.Container {
-			return
-		}
-	}
+	// Self-host fork: petals are always trusted. The operator owns the server and whatever
+	// lands in data/plugins/ is there because they put it there. No bazaar gating.
 
 	var petalNames []string
 	petals := getPetals()
 	for _, petal := range petals {
-		_, petal.DisplayName, petal.Incompatible, petal.DisabledInPublish, petal.DisallowInstall = bazaar.ParseInstalledPlugin(petal.Name, frontend)
+		_, petal.DisplayName, petal.Incompatible, petal.DisabledInPublish, petal.DisallowInstall = ParseInstalledPlugin(petal.Name, frontend)
 		if !petal.Enabled || petal.Incompatible || (isPublish && petal.DisabledInPublish) || petal.DisallowInstall {
 			if petal.DisallowInstall {
 				SetPetalEnabled(petal.Name, false, frontend)
@@ -271,8 +262,8 @@ func getPetals() (ret []*Petal) {
 		if filelock.IsExist(pluginJSONPath) {
 			tmp = append(tmp, petal)
 		} else {
-			// 插件不存在时，删除对应的持久化信息
-			bazaar.RemovePackageInfo("plugins", petal.Name)
+			// 插件不存在时，删除对应的持久化信息（self-host: no-op）
+			RemovePackageInfo("plugins", petal.Name)
 		}
 	}
 	if len(tmp) != len(ret) {

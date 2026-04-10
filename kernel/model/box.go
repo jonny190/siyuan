@@ -62,26 +62,24 @@ type Box struct {
 }
 
 func StatJob() {
+	// Self-host fork: stats are no longer persisted to Conf (Conf.Stat was removed along
+	// with the b3log telemetry/cloud reporting). Compute on-the-fly for the log line and
+	// for the disk-usage warning.
+	treeCount := treenode.CountTrees()
+	blockCount := treenode.CountBlocks()
+	dataSize, assetsSize := util.DataSize()
 
-	Conf.m.Lock()
-	Conf.Stat.TreeCount = treenode.CountTrees()
-	Conf.Stat.CTreeCount = treenode.CeilTreeCount(Conf.Stat.TreeCount)
-	Conf.Stat.BlockCount = treenode.CountBlocks()
-	Conf.Stat.CBlockCount = treenode.CeilBlockCount(Conf.Stat.BlockCount)
-	Conf.Stat.DataSize, Conf.Stat.AssetsSize = util.DataSize()
-	Conf.Stat.CDataSize = util.CeilSize(Conf.Stat.DataSize)
-	Conf.Stat.CAssetsSize = util.CeilSize(Conf.Stat.AssetsSize)
-	Conf.m.Unlock()
-	Conf.Save()
-
-	logging.LogInfof("auto stat [trees=%d, blocks=%d, dataSize=%s, assetsSize=%s]", Conf.Stat.TreeCount, Conf.Stat.BlockCount, humanize.BytesCustomCeil(uint64(Conf.Stat.DataSize), 2), humanize.BytesCustomCeil(uint64(Conf.Stat.AssetsSize), 2))
+	logging.LogInfof("auto stat [trees=%d, blocks=%d, dataSize=%s, assetsSize=%s]",
+		treeCount, blockCount,
+		humanize.BytesCustomCeil(uint64(dataSize), 2),
+		humanize.BytesCustomCeil(uint64(assetsSize), 2))
 
 	// 桌面端检查磁盘可用空间 https://github.com/siyuan-note/siyuan/issues/6873
 	if util.ContainerStd != util.Container {
 		return
 	}
 
-	if util.NeedWarnDiskUsage(Conf.Stat.DataSize) {
+	if util.NeedWarnDiskUsage(dataSize) {
 		util.PushMsg(Conf.Language(179), 7000)
 	}
 }

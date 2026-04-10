@@ -60,9 +60,6 @@ type AppConf struct {
 	Export         *conf.Export     `json:"export"`         // 导出配置
 	Graph          *conf.Graph      `json:"graph"`          // 关系图配置
 	UILayout       *conf.UILayout   `json:"uiLayout"`       // 界面布局。不要直接使用，使用 GetUILayout() 和 SetUILayout() 方法
-	UserData       string           `json:"userData"`       // 社区用户信息，对 User 加密存储
-	User           *conf.User       `json:"-"`              // 社区用户内存结构，不持久化。不要直接使用，使用 GetUser() 和 SetUser() 方法
-	Account        *conf.Account    `json:"account"`        // 帐号配置
 	ReadOnly       bool             `json:"readonly"`       // 是否是以只读模式运行
 	ServerAddrs    []string         `json:"serverAddrs"`    // 本地服务器地址列表
 	AccessAuthCode string           `json:"accessAuthCode"` // 访问授权码
@@ -72,27 +69,22 @@ type AppConf struct {
 	Search         *conf.Search     `json:"search"`         // 搜索配置
 	Flashcard      *conf.Flashcard  `json:"flashcard"`      // 闪卡配置
 	AI             *conf.AI         `json:"ai"`             // 人工智能配置
-	Bazaar         *conf.Bazaar     `json:"bazaar"`         // 集市配置
-	Stat           *conf.Stat       `json:"stat"`           // 统计
 	Api            *conf.API        `json:"api"`            // API
 	Repo           *conf.Repo       `json:"repo"`           // 数据仓库
 	Publish        *conf.Publish    `json:"publish"`        // 发布服务
 	OpenHelp       bool             `json:"openHelp"`       // 启动后是否需要打开用户指南
 	ShowChangelog  bool             `json:"showChangelog"`  // 是否显示版本更新日志
-	CloudRegion    int              `json:"cloudRegion"`    // 云端区域，0：中国大陆，1：北美
 	Snippet        *conf.Snpt       `json:"snippet"`        // 代码片段
 	DataIndexState int              `json:"dataIndexState"` // 数据索引状态，0：已索引，1：未索引
 	CookieKey      string           `json:"cookieKey"`      // 用于加密 Cookie 的密钥
 
-	m        *sync.RWMutex // 配置数据锁
-	userLock *sync.RWMutex // 用户数据独立锁，避免与配置保存操作竞争
+	m *sync.RWMutex // 配置数据锁
 }
 
 func NewAppConf() *AppConf {
 	return &AppConf{
 		LogLevel: "debug",
 		m:        &sync.RWMutex{},
-		userLock: &sync.RWMutex{},
 	}
 }
 
@@ -106,18 +98,6 @@ func (conf *AppConf) SetUILayout(uiLayout *conf.UILayout) {
 	conf.m.Lock()
 	defer conf.m.Unlock()
 	conf.UILayout = uiLayout
-}
-
-func (conf *AppConf) GetUser() *conf.User {
-	conf.userLock.RLock()
-	defer conf.userLock.RUnlock()
-	return conf.User
-}
-
-func (conf *AppConf) SetUser(user *conf.User) {
-	conf.userLock.Lock()
-	defer conf.userLock.Unlock()
-	conf.User = user
 }
 
 func InitConf() {
@@ -242,8 +222,6 @@ func InitConf() {
 	if conf.MaxFileTreeRecentDocsListCount < Conf.FileTree.RecentDocsMaxListCount {
 		Conf.FileTree.RecentDocsMaxListCount = conf.MaxFileTreeRecentDocsListCount
 	}
-
-	util.CurrentCloudRegion = Conf.CloudRegion
 
 	if nil == Conf.Tag {
 		Conf.Tag = conf.NewTag()
@@ -397,18 +375,17 @@ func InitConf() {
 		Conf.Snippet = conf.NewSnpt()
 	}
 
-	if "" != Conf.UserData {
-		Conf.SetUser(loadUserFromConf())
-	}
-	if nil == Conf.Account {
-		Conf.Account = conf.NewAccount()
-	}
-
 	if nil == Conf.Sync {
 		Conf.Sync = conf.NewSync()
 	}
 	if 0 == Conf.Sync.Mode {
 		Conf.Sync.Mode = 1
+	}
+	// Self-host fork: migrate legacy Provider=ProviderSiYuan (0) to ProviderLocal (4) and
+	// force-disable sync so the user consciously picks a backend.
+	if conf.ProviderSiYuan == Conf.Sync.Provider {
+		Conf.Sync.Provider = conf.ProviderLocal
+		Conf.Sync.Enabled = false
 	}
 	if 30 > Conf.Sync.Interval {
 		Conf.Sync.Interval = 30
@@ -441,10 +418,6 @@ func InitConf() {
 
 	if nil == Conf.Api {
 		Conf.Api = conf.NewAPI()
-	}
-
-	if nil == Conf.Bazaar {
-		Conf.Bazaar = conf.NewBazaar()
 	}
 
 	if nil == Conf.Publish {
@@ -487,10 +460,6 @@ func InitConf() {
 	}
 	if 1 > Conf.Search.BacklinkMentionKeywordsLimit {
 		Conf.Search.BacklinkMentionKeywordsLimit = 512
-	}
-
-	if nil == Conf.Stat {
-		Conf.Stat = conf.NewStat()
 	}
 
 	if nil == Conf.Flashcard {
@@ -744,8 +713,9 @@ func Close(force, setCurrentWorkspace bool, execInstallPkg int) (exitCode int) {
 	FlushTxQueue()
 
 	if !force {
-		if Conf.Sync.Enabled && 3 != Conf.Sync.Mode &&
-			((IsSubscriber() && conf.ProviderSiYuan == Conf.Sync.Provider) || conf.ProviderSiYuan != Conf.Sync.Provider) {
+		// Self-host fork: sync on exit if enabled and not in fully-manual mode (3).
+		// Provider gating on IsSubscriber is gone with the b3log account removal.
+		if Conf.Sync.Enabled && 3 != Conf.Sync.Mode {
 			syncData(true, false)
 			if 0 != ExitSyncSucc {
 				exitCode = 1
@@ -761,21 +731,8 @@ func Close(force, setCurrentWorkspace bool, execInstallPkg int) (exitCode int) {
 	sql.FlushQueue()
 
 	util.IsExiting.Store(true)
-	waitSecondForExecInstallPkg := false
-	newVerInstallPkgPath := getNewVerInstallPkgPath()
-	if !skipNewVerInstallPkg() && "" != newVerInstallPkgPath {
-		if 2 == execInstallPkg || (force && 0 == execInstallPkg) { // 执行新版本安装
-			waitSecondForExecInstallPkg = true
-			if gulu.OS.IsWindows() {
-				util.PushMsg(Conf.Language(130), 1000*30)
-			}
-			go execNewVerInstallPkg(newVerInstallPkgPath)
-		} else if 0 == execInstallPkg { // 新版本安装包已经准备就绪
-			exitCode = 2
-			logging.LogInfof("the new version install pkg is ready [%s], waiting for the user's next instruction", newVerInstallPkgPath)
-			return
-		}
-	}
+	// Self-host fork: auto-update installer flow removed with kernel/model/updater.go.
+	// The exitCode==2 "new version ready" path and execInstallPkg branches are gone.
 
 	Conf.Close()
 	sql.CloseDatabase()
@@ -801,13 +758,6 @@ func Close(force, setCurrentWorkspace bool, execInstallPkg int) (exitCode int) {
 	util.UnlockWorkspace()
 
 	time.Sleep(500 * time.Millisecond)
-	if waitSecondForExecInstallPkg {
-		// 桌面端退出拉起更新安装时有时需要重启两次 https://github.com/siyuan-note/siyuan/issues/6544
-		// 这里多等待一段时间，等待安装程序启动
-		if gulu.OS.IsWindows() {
-			time.Sleep(30 * time.Second)
-		}
-	}
 
 	closeSyncWebSocket()
 
@@ -985,7 +935,9 @@ func (conf *AppConf) GetClosedBoxes() (ret []*Box) {
 
 func (conf *AppConf) Language(num int) (ret string) {
 	ret = conf.language(num)
-	ret = strings.ReplaceAll(ret, "${accountServer}", util.GetCloudAccountServer())
+	// Self-host fork: ${accountServer} template placeholder is no longer substituted.
+	// If a language string still contains it, leave it literal; the only surviving calls
+	// are in deleted account/cloud features anyway.
 	return
 }
 
@@ -1012,25 +964,13 @@ func InitBoxes() {
 	logging.LogInfof("tree/block count [%d/%d]", treenode.CountTrees(), blockCount)
 }
 
-func IsSubscriber() bool {
-	u := Conf.GetUser()
-	return nil != u && (-1 == u.UserSiYuanProExpireTime || 0 < u.UserSiYuanProExpireTime) && 0 == u.UserSiYuanSubscriptionStatus
-}
-
-func IsPaidUser() bool {
-	if IsSubscriber() {
-		return true
-	}
-
-	u := Conf.GetUser()
-	if nil == u {
-		return false
-	}
-	return 1 == u.UserSiYuanOneTimePayStatus
-}
+// IsSubscriber and IsPaidUser are stubbed out for the self-host fork: there is no b3log
+// account, no subscription, no one-time-pay status. Anything that was gated on these in
+// upstream (cloud sync provider 0, cloud AI, etc.) has been removed.
+func IsSubscriber() bool { return false }
+func IsPaidUser() bool   { return false }
 
 const (
-	MaskedUserData       = ""
 	MaskedAccessAuthCode = "*******"
 )
 
@@ -1050,7 +990,6 @@ func GetMaskedConf() (ret *AppConf, err error) {
 		return
 	}
 
-	ret.UserData = MaskedUserData
 	if "" != ret.AccessAuthCode {
 		ret.AccessAuthCode = MaskedAccessAuthCode
 	}

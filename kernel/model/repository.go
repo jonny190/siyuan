@@ -702,28 +702,10 @@ func ResetRepo() (err error) {
 	return
 }
 
-func PurgeCloud() (err error) {
-	msg := Conf.Language(223)
-	util.PushEndlessProgress(msg)
-	defer util.PushClearProgress()
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	stat, err := repo.PurgeCloud()
-	if err != nil {
-		return
-	}
-
-	deletedIndexes := stat.Indexes
-	deletedObjects := stat.Objects
-	deletedSize := humanize.BytesCustomCeil(uint64(stat.Size), 2)
-	msg = fmt.Sprintf(Conf.Language(232), deletedIndexes, deletedObjects, deletedSize)
-	util.PushMsg(msg, 7000)
-	return
-}
+// Self-host fork: PurgeCloud, DownloadCloudSnapshot, UploadCloudSnapshot,
+// RemoveCloudRepoTag, GetCloudRepoTagSnapshots, and GetCloudRepoSnapshots are removed along
+// with their API routes. Repository snapshots still work locally via PurgeRepo / Snapshot /
+// GetRepoSnapshots; sync still works through the WebDAV / S3 / Local providers.
 
 func PurgeRepo() (err error) {
 	msg := Conf.Language(202)
@@ -891,201 +873,6 @@ func checkoutRepo(id string) {
 
 	if syncEnabled {
 		task.AppendAsyncTaskWithDelay(task.PushMsg, 7*time.Second, util.PushMsg, Conf.Language(134), 0)
-	}
-	return
-}
-
-func DownloadCloudSnapshot(tag, id string) (err error) {
-	if 1 > len(Conf.Repo.Key) {
-		err = errors.New(Conf.Language(26))
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			util.PushErrMsg(Conf.Language(29), 5000)
-			return
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			util.PushErrMsg(Conf.Language(214), 5000)
-			return
-		}
-	}
-
-	defer util.PushClearProgress()
-
-	var downloadFileCount, downloadChunkCount int
-	var downloadBytes int64
-	if "" == tag {
-		downloadFileCount, downloadChunkCount, downloadBytes, err = repo.DownloadIndex(id, map[string]interface{}{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBarAndProgress})
-	} else {
-		downloadFileCount, downloadChunkCount, downloadBytes, err = repo.DownloadTagIndex(tag, id, map[string]interface{}{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBarAndProgress})
-	}
-	if err != nil {
-		return
-	}
-	msg := fmt.Sprintf(Conf.Language(153), downloadFileCount, downloadChunkCount, humanize.BytesCustomCeil(uint64(downloadBytes), 2))
-	util.PushMsg(msg, 5000)
-	util.PushStatusBar(msg)
-	return
-}
-
-func UploadCloudSnapshot(tag, id string) (err error) {
-	if 1 > len(Conf.Repo.Key) {
-		err = errors.New(Conf.Language(26))
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			util.PushErrMsg(Conf.Language(29), 5000)
-			return
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			util.PushErrMsg(Conf.Language(214), 5000)
-			return
-		}
-	}
-
-	util.PushEndlessProgress(Conf.Language(116))
-	defer util.PushClearProgress()
-	uploadFileCount, uploadChunkCount, uploadBytes, err := repo.UploadTagIndex(tag, id, map[string]interface{}{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBarAndProgress})
-	if err != nil {
-		if errors.Is(err, dejavu.ErrCloudBackupCountExceeded) {
-			err = fmt.Errorf(Conf.Language(84), Conf.Language(154))
-			return
-		}
-		err = errors.New(fmt.Sprintf(Conf.Language(84), formatRepoErrorMsg(err)))
-		return
-	}
-	msg := fmt.Sprintf(Conf.Language(152), uploadFileCount, uploadChunkCount, humanize.BytesCustomCeil(uint64(uploadBytes), 2))
-	util.PushMsg(msg, 5000)
-	util.PushStatusBar(msg)
-	return
-}
-
-func RemoveCloudRepoTag(tag string) (err error) {
-	if 1 > len(Conf.Repo.Key) {
-		err = errors.New(Conf.Language(26))
-		return
-	}
-
-	if "" == tag {
-		err = errors.New("tag is empty")
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			util.PushErrMsg(Conf.Language(29), 5000)
-			return
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			util.PushErrMsg(Conf.Language(214), 5000)
-			return
-		}
-	}
-
-	err = repo.RemoveCloudRepoTag(tag)
-	if err != nil {
-		return
-	}
-	return
-}
-
-func GetCloudRepoTagSnapshots() (ret []*dejavu.Log, err error) {
-	ret = []*dejavu.Log{}
-	if 1 > len(Conf.Repo.Key) {
-		err = errors.New(Conf.Language(26))
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			util.PushErrMsg(Conf.Language(29), 5000)
-			return
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			util.PushErrMsg(Conf.Language(214), 5000)
-			return
-		}
-	}
-
-	logs, err := repo.GetCloudRepoTagLogs(map[string]interface{}{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBar})
-	if err != nil {
-		return
-	}
-	ret = logs
-	if 1 > len(ret) {
-		ret = []*dejavu.Log{}
-	}
-	return
-}
-
-func GetCloudRepoSnapshots(page int) (ret []*dejavu.Log, pageCount, totalCount int, err error) {
-	ret = []*dejavu.Log{}
-	if 1 > len(Conf.Repo.Key) {
-		err = errors.New(Conf.Language(26))
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			util.PushErrMsg(Conf.Language(29), 5000)
-			return
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			util.PushErrMsg(Conf.Language(214), 5000)
-			return
-		}
-	}
-
-	if 1 > page {
-		page = 1
-	}
-
-	logs, pageCount, totalCount, err := repo.GetCloudRepoLogs(page)
-	if err != nil {
-		return
-	}
-	ret = logs
-	if 1 > len(ret) {
-		ret = []*dejavu.Log{}
 	}
 	return
 }
@@ -1274,13 +1061,7 @@ func syncRepoDownload() (err error) {
 
 		logging.LogErrorf("sync data repo download failed: %s", err)
 		msg := fmt.Sprintf(Conf.Language(80), formatRepoErrorMsg(err))
-		if errors.Is(err, dejavu.ErrCloudStorageSizeExceeded) {
-			u := Conf.GetUser()
-			msg = fmt.Sprintf(Conf.Language(43), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			if 2 == u.UserSiYuanSubscriptionPlan {
-				msg = fmt.Sprintf(Conf.Language(68), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			}
-		}
+		// Self-host fork: b3log subscription-tier storage messages removed.
 		Conf.Sync.Stat = msg
 		Conf.Save()
 		util.PushStatusBar(msg)
@@ -1346,13 +1127,7 @@ func syncRepoUpload() (err error) {
 
 		logging.LogErrorf("sync data repo upload failed: %s", err)
 		msg := fmt.Sprintf(Conf.Language(80), formatRepoErrorMsg(err))
-		if errors.Is(err, dejavu.ErrCloudStorageSizeExceeded) {
-			u := Conf.GetUser()
-			msg = fmt.Sprintf(Conf.Language(43), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			if 2 == u.UserSiYuanSubscriptionPlan {
-				msg = fmt.Sprintf(Conf.Language(68), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			}
-		}
+		// Self-host fork: b3log subscription-tier storage messages removed.
 		Conf.Sync.Stat = msg
 		Conf.Save()
 		util.PushStatusBar(msg)
@@ -1467,13 +1242,7 @@ func bootSyncRepo() (err error) {
 
 		logging.LogErrorf("sync data repo failed: %s", err)
 		msg := fmt.Sprintf(Conf.Language(80), formatRepoErrorMsg(err))
-		if errors.Is(err, dejavu.ErrCloudStorageSizeExceeded) {
-			u := Conf.GetUser()
-			msg = fmt.Sprintf(Conf.Language(43), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			if 2 == u.UserSiYuanSubscriptionPlan {
-				msg = fmt.Sprintf(Conf.Language(68), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			}
-		}
+		// Self-host fork: b3log subscription-tier storage messages removed.
 		Conf.Sync.Stat = msg
 		Conf.Save()
 		util.PushStatusBar(msg)
@@ -1568,13 +1337,7 @@ func syncRepo(exit, byHand bool) (dataChanged bool, err error) {
 
 		logging.LogErrorf("sync data repo failed: %s", err)
 		msg := fmt.Sprintf(Conf.Language(80), formatRepoErrorMsg(err))
-		if errors.Is(err, dejavu.ErrCloudStorageSizeExceeded) {
-			u := Conf.GetUser()
-			msg = fmt.Sprintf(Conf.Language(43), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			if 2 == u.UserSiYuanSubscriptionPlan {
-				msg = fmt.Sprintf(Conf.Language(68), humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2))
-			}
-		}
+		// Self-host fork: b3log subscription-tier storage messages removed.
 		Conf.Sync.Stat = msg
 		Conf.Save()
 		util.PushStatusBar(msg)
@@ -2005,8 +1768,6 @@ func newRepository() (ret *dejavu.Repo, err error) {
 
 	var cloudRepo cloud.Cloud
 	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		cloudRepo = cloud.NewSiYuan(&cloud.BaseCloud{Conf: cloudConf})
 	case conf.ProviderS3:
 		s3HTTPClient := &http.Client{Transport: httpclient.NewTransport(cloudConf.S3.SkipTlsVerify)}
 		s3HTTPClient.Timeout = time.Duration(cloudConf.S3.Timeout) * time.Second
@@ -2266,25 +2027,17 @@ func buildCloudConf() (ret *cloud.Conf, err error) {
 		Conf.Save()
 	}
 
-	userId, token, availableSize := "0", "", int64(1024*1024*1024*1024*2)
-	if nil != Conf.User && conf.ProviderSiYuan == Conf.Sync.Provider {
-		u := Conf.GetUser()
-		userId = u.UserId
-		token = u.UserToken
-		availableSize = u.GetCloudRepoAvailableSize()
-	}
-
+	// Self-host fork: no b3log user context. Use a fixed dummy userId and a large
+	// available-size placeholder so dejavu's cloud.Conf stays well-formed; the
+	// WebDAV/S3/Local providers ignore UserID/Token/Server anyway.
 	ret = &cloud.Conf{
 		Dir:           Conf.Sync.CloudName,
-		UserID:        userId,
-		Token:         token,
-		AvailableSize: availableSize,
-		Server:        util.GetCloudServer(),
+		UserID:        "selfhost",
+		Token:         "",
+		AvailableSize: int64(1024 * 1024 * 1024 * 1024 * 2),
 	}
 
 	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		ret.Endpoint = util.GetCloudSyncServer()
 	case conf.ProviderS3:
 		ret.S3 = &cloud.ConfS3{
 			Endpoint:       Conf.Sync.S3.Endpoint,
@@ -2334,66 +2087,5 @@ type Sync struct {
 	SaveDir   string `json:"saveDir"`   // 本地同步数据存放目录路径
 }
 
-func GetCloudSpace() (s *Sync, b *Backup, hSize, hAssetSize, hTotalSize, hExchangeSize, hTrafficUploadSize, hTrafficDownloadSize, hTrafficAPIGet, hTrafficAPIPut string, err error) {
-	stat, err := getCloudSpace()
-	if err != nil {
-		err = errors.New(Conf.Language(30) + " " + err.Error())
-		return
-	}
-
-	syncSize := stat.Sync.Size
-	syncUpdated := stat.Sync.Updated
-	s = &Sync{
-		Size:    syncSize,
-		HSize:   "-",
-		Updated: syncUpdated,
-	}
-
-	backupSize := stat.Backup.Size
-	backupUpdated := stat.Backup.Updated
-	b = &Backup{
-		Size:    backupSize,
-		HSize:   "-",
-		Updated: backupUpdated,
-	}
-
-	assetSize := stat.AssetSize
-	totalSize := syncSize + backupSize + assetSize
-	hAssetSize = "-"
-	hSize = "-"
-	hTotalSize = "-"
-	hExchangeSize = "-"
-	hTrafficUploadSize = "-"
-	hTrafficDownloadSize = "-"
-	hTrafficAPIGet = "-"
-	hTrafficAPIPut = "-"
-	if conf.ProviderSiYuan == Conf.Sync.Provider {
-		s.HSize = humanize.BytesCustomCeil(uint64(syncSize), 2)
-		b.HSize = humanize.BytesCustomCeil(uint64(backupSize), 2)
-		hAssetSize = humanize.BytesCustomCeil(uint64(assetSize), 2)
-		hSize = humanize.BytesCustomCeil(uint64(totalSize), 2)
-		if u := Conf.GetUser(); nil != u {
-			hTotalSize = humanize.BytesCustomCeil(uint64(u.UserSiYuanRepoSize), 2)
-			hExchangeSize = humanize.BytesCustomCeil(uint64(u.UserSiYuanPointExchangeRepoSize), 2)
-			hTrafficUploadSize = humanize.BytesCustomCeil(uint64(u.UserTrafficUpload), 2)
-			hTrafficDownloadSize = humanize.BytesCustomCeil(uint64(u.UserTrafficDownload), 2)
-			hTrafficAPIGet = humanize.SIWithDigits(u.UserTrafficAPIGet, 2, "")
-			hTrafficAPIPut = humanize.SIWithDigits(u.UserTrafficAPIPut, 2, "")
-		}
-	}
-	return
-}
-
-func getCloudSpace() (stat *cloud.Stat, err error) {
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	stat, err = repo.GetCloudRepoStat()
-	if err != nil {
-		logging.LogErrorf("get cloud repo stat failed: %s", err)
-		return
-	}
-	return
-}
+// Self-host fork: GetCloudSpace and getCloudSpace are removed. They only surfaced the
+// b3log subscription usage panel in the settings UI.

@@ -20,14 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/88250/gulu"
 	"github.com/88250/lute/ast"
-	"github.com/88250/lute/editor"
 	"github.com/88250/lute/html"
 	"github.com/88250/lute/parse"
-	"github.com/araddon/dateparse"
 	"github.com/siyuan-note/siyuan/kernel/cache"
 	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/sql"
@@ -35,67 +32,11 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
+// SetBlockReminder is disabled in the self-host fork. The upstream implementation posted
+// the reminder to b3log's WeChat push service; there is no local equivalent, and the
+// handler route still exists so a stub keeps the frontend from 404-ing.
 func SetBlockReminder(id string, timed string) (err error) {
-	if !IsSubscriber() {
-		if "ios" == util.Container {
-			return errors.New(Conf.Language(122))
-		}
-		return errors.New(Conf.Language(29))
-	}
-
-	var timedMills int64
-	if "0" != timed {
-		t, e := dateparse.ParseIn(timed, time.Now().Location())
-		if nil != e {
-			return e
-		}
-		timedMills = t.UnixMilli()
-	}
-
-	FlushTxQueue()
-
-	attrs := sql.GetBlockAttrs(id)
-	tree, err := LoadTreeByBlockID(id)
-	if err != nil {
-		return
-	}
-
-	node := treenode.GetNodeInTree(tree, id)
-	if nil == node {
-		return errors.New(fmt.Sprintf(Conf.Language(15), id))
-	}
-
-	if ast.NodeDocument != node.Type && node.IsContainerBlock() {
-		node = treenode.FirstLeafBlock(node)
-	}
-	content := sql.NodeStaticContent(node, nil, false, false, false)
-	content = gulu.Str.SubStr(content, 128)
-	content = strings.ReplaceAll(content, editor.Zwsp, "")
-	err = SetCloudBlockReminder(id, content, timedMills)
-	if err != nil {
-		return
-	}
-
-	attrName := "custom-reminder-wechat"
-	if "0" == timed {
-		delete(attrs, attrName)
-		old := node.IALAttr(attrName)
-		oldTimedMills, e := dateparse.ParseIn(old, time.Now().Location())
-		if nil == e {
-			util.PushMsg(fmt.Sprintf(Conf.Language(109), oldTimedMills.Format("2006-01-02 15:04")), 3000)
-		}
-		node.RemoveIALAttr(attrName)
-	} else {
-		attrs[attrName] = timed
-		node.SetIALAttr(attrName, timed)
-		util.PushMsg(fmt.Sprintf(Conf.Language(101), time.UnixMilli(timedMills).Format("2006-01-02 15:04")), 5000)
-	}
-	if err = indexWriteTreeUpsertQueue(tree); err != nil {
-		return
-	}
-	IncSync()
-	cache.PutBlockIAL(id, attrs)
-	return
+	return errors.New("block reminder is not available in the self-host build")
 }
 
 func BatchSetBlockAttrs(blockAttrs []map[string]interface{}) (err error) {

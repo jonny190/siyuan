@@ -19,19 +19,15 @@ package model
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/88250/go-humanize"
 	"github.com/88250/gulu"
 	"github.com/88250/lute/html"
-	"github.com/gorilla/websocket"
 	"github.com/siyuan-note/dejavu"
 	"github.com/siyuan-note/dejavu/cloud"
 	"github.com/siyuan-note/logging"
@@ -206,21 +202,8 @@ func syncData(exit, byHand bool) {
 	}
 	util.BroadcastByType("main", "syncing", code, Conf.Sync.Stat, nil)
 
-	if nil == webSocketConn && Conf.Sync.Perception {
-		// 如果 websocket 连接已经断开，则重新连接
-		connectSyncWebSocket()
-	}
-
-	if 1 == Conf.Sync.Mode && nil != webSocketConn && Conf.Sync.Perception && dataChanged {
-		// 如果处于自动同步模式且不是由 WS 触发的同步，则通知其他设备上的内核进行同步
-		request := map[string]interface{}{
-			"cmd":    "synced",
-			"synced": Conf.Sync.Synced,
-		}
-		if writeErr := webSocketConn.WriteJSON(request); nil != writeErr {
-			logging.LogErrorf("write websocket message failed: %v", writeErr)
-		}
-	}
+	// Self-host fork: sync-perception WebSocket multi-device notification is removed.
+	_ = dataChanged
 	return
 }
 
@@ -247,20 +230,8 @@ func checkSync(boot, exit, byHand bool) bool {
 		return false
 	}
 
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		if !IsSubscriber() {
-			Conf.Sync.Enabled = false
-			Conf.Save()
-			return false
-		}
-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
-		if !IsPaidUser() {
-			Conf.Sync.Enabled = false
-			Conf.Save()
-			return false
-		}
-	}
+	// Self-host fork: no subscription gating. If the user has configured a provider,
+	// sync is allowed.
 
 	if 7 < autoSyncErrCount && !byHand {
 		logging.LogErrorf("failed to auto-sync too many times, delay auto-sync 64 minutes")
@@ -365,20 +336,6 @@ func upsertIndexes(upsertFilePaths []string) (upsertRootIDs []string) {
 		upsertRootIDs = []string{}
 	}
 	return
-}
-
-func SetCloudSyncDir(name string) {
-	if !cloud.IsValidCloudDirName(name) {
-		util.PushErrMsg(Conf.Language(37), 5000)
-		return
-	}
-
-	if Conf.Sync.CloudName == name {
-		return
-	}
-
-	Conf.Sync.CloudName = name
-	Conf.Save()
 }
 
 func SetSyncGenerateConflictDoc(b bool) {
@@ -515,116 +472,9 @@ var (
 	isSyncing = atomic.Bool{}
 )
 
-func CreateCloudSyncDir(name string) (err error) {
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan, conf.ProviderLocal:
-		break
-	default:
-		err = errors.New(Conf.Language(131))
-		return
-	}
-
-	name = strings.TrimSpace(name)
-	name = util.RemoveInvalid(name)
-	if !cloud.IsValidCloudDirName(name) {
-		return errors.New(Conf.Language(37))
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	err = repo.CreateCloudRepo(name)
-	if err != nil {
-		err = errors.New(formatRepoErrorMsg(err))
-		return
-	}
-	return
-}
-
-func RemoveCloudSyncDir(name string) (err error) {
-	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan, conf.ProviderLocal:
-		break
-	default:
-		err = errors.New(Conf.Language(131))
-		return
-	}
-
-	msgId := util.PushMsg(Conf.Language(116), 15000)
-
-	if "" == name {
-		return
-	}
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	err = repo.RemoveCloudRepo(name)
-	if err != nil {
-		err = errors.New(formatRepoErrorMsg(err))
-		return
-	}
-
-	util.PushClearMsg(msgId)
-	time.Sleep(500 * time.Millisecond)
-	if Conf.Sync.CloudName == name {
-		Conf.Sync.CloudName = "main"
-		Conf.Save()
-		util.PushMsg(Conf.Language(155), 5000)
-	}
-	return
-}
-
-func ListCloudSyncDir() (syncDirs []*Sync, hSize string, err error) {
-	syncDirs = []*Sync{}
-	var dirs []*cloud.Repo
-	var size int64
-
-	repo, err := newRepository()
-	if err != nil {
-		return
-	}
-
-	dirs, size, err = repo.GetCloudRepos()
-	if err != nil {
-		err = errors.New(formatRepoErrorMsg(err))
-		return
-	}
-	if 1 > len(dirs) {
-		dirs = append(dirs, &cloud.Repo{
-			Name:    "main",
-			Size:    0,
-			Updated: time.Now().Format("2006-01-02 15:04:05"),
-		})
-	}
-
-	for _, d := range dirs {
-		dirSize := d.Size
-		sync := &Sync{
-			Size:      dirSize,
-			HSize:     "-",
-			Updated:   d.Updated,
-			CloudName: d.Name,
-		}
-		if conf.ProviderSiYuan == Conf.Sync.Provider {
-			sync.HSize = humanize.BytesCustomCeil(uint64(dirSize), 2)
-		}
-		syncDirs = append(syncDirs, sync)
-	}
-	hSize = "-"
-	if conf.ProviderSiYuan == Conf.Sync.Provider {
-		hSize = humanize.BytesCustomCeil(uint64(size), 2)
-	}
-	if conf.ProviderS3 == Conf.Sync.Provider {
-		Conf.Sync.CloudName = syncDirs[0].CloudName
-		Conf.Save()
-	}
-	return
-}
+// Self-host fork: CreateCloudSyncDir / RemoveCloudSyncDir / ListCloudSyncDir are removed.
+// They only backed the b3log cloud directory picker UI. WebDAV / S3 / Local use their own
+// explicit configuration screens and do not need a separate "cloud directory" concept.
 
 func formatRepoErrorMsg(err error) string {
 	msg := html.EscapeString(err.Error())
@@ -725,8 +575,6 @@ func isProviderOnline(byHand bool) (ret bool) {
 	var checkURL string
 	skipTlsVerify := false
 	switch Conf.Sync.Provider {
-	case conf.ProviderSiYuan:
-		checkURL = util.GetCloudSyncServer()
 	case conf.ProviderS3:
 		checkURL = Conf.Sync.S3.Endpoint
 		skipTlsVerify = Conf.Sync.S3.SkipTlsVerify
@@ -752,10 +600,9 @@ func isProviderOnline(byHand bool) (ret bool) {
 	return
 }
 
-var (
-	webSocketConn     *websocket.Conn
-	webSocketConnLock = sync.Mutex{}
-)
+// Self-host fork: the sync-perception WebSocket (b3log siyuan-sync.b3logfile.com) is
+// removed. The OnlineKernel type is retained because the /api/sync/getSyncInfo endpoint
+// still returns an empty kernels array to keep the frontend happy.
 
 type OnlineKernel struct {
 	ID       string `json:"id"`
@@ -764,155 +611,11 @@ type OnlineKernel struct {
 	Ver      string `json:"ver"`
 }
 
-var (
-	onlineKernels     []*OnlineKernel
-	onlineKernelsLock = sync.Mutex{}
-)
-
 func GetOnlineKernels() (ret []*OnlineKernel) {
-	ret = []*OnlineKernel{}
-	onlineKernelsLock.Lock()
-	tmp := onlineKernels
-	onlineKernelsLock.Unlock()
-	for _, kernel := range tmp {
-		if kernel.ID == KernelID {
-			continue
-		}
-
-		ret = append(ret, kernel)
-	}
-	return
+	return []*OnlineKernel{}
 }
 
-var closedSyncWebSocket = atomic.Bool{}
-
-func closeSyncWebSocket() {
-	defer logging.Recover()
-
-	webSocketConnLock.Lock()
-	defer webSocketConnLock.Unlock()
-
-	if nil != webSocketConn {
-		webSocketConn.Close()
-		webSocketConn = nil
-		closedSyncWebSocket.Store(true)
-	}
-
-	logging.LogInfof("sync websocket closed")
-}
-
-func connectSyncWebSocket() {
-	defer logging.Recover()
-
-	if !Conf.Sync.Enabled || !IsSubscriber() || conf.ProviderSiYuan != Conf.Sync.Provider {
-		return
-	}
-
-	if util.ContainerDocker == util.Container {
-		return
-	}
-
-	webSocketConnLock.Lock()
-	defer webSocketConnLock.Unlock()
-
-	if nil != webSocketConn {
-		return
-	}
-
-	//logging.LogInfof("connecting sync websocket...")
-	var dialErr error
-	webSocketConn, dialErr = dialSyncWebSocket()
-	if nil != dialErr {
-		logging.LogWarnf("connect sync websocket failed: %s", dialErr)
-		return
-	}
-	logging.LogInfof("sync websocket connected")
-
-	webSocketConn.SetCloseHandler(func(code int, text string) error {
-		logging.LogWarnf("sync websocket closed: %d, %s", code, text)
-		return nil
-	})
-
-	go func() {
-		defer logging.Recover()
-
-		for {
-			result := gulu.Ret.NewResult()
-			if readErr := webSocketConn.ReadJSON(&result); nil != readErr {
-				time.Sleep(1 * time.Second)
-				if closedSyncWebSocket.Load() {
-					return
-				}
-
-				reconnected := false
-				for retries := 0; retries < 7; retries++ {
-					time.Sleep(7 * time.Second)
-					if nil == Conf.GetUser() {
-						return
-					}
-
-					//logging.LogInfof("reconnecting sync websocket...")
-					webSocketConn, dialErr = dialSyncWebSocket()
-					if nil != dialErr {
-						logging.LogWarnf("reconnect sync websocket failed: %s", dialErr)
-						continue
-					}
-
-					logging.LogInfof("sync websocket reconnected")
-					reconnected = true
-					break
-				}
-				if !reconnected {
-					logging.LogWarnf("reconnect sync websocket failed, do not retry")
-					webSocketConn = nil
-					return
-				}
-
-				continue
-			}
-
-			logging.LogInfof("sync websocket message: %v", result)
-			data := result.Data.(map[string]interface{})
-			switch data["cmd"].(string) {
-			case "synced":
-				// Improve data synchronization perception https://github.com/siyuan-note/siyuan/issues/13000
-				SyncDataDownload()
-			case "kernels":
-				onlineKernelsLock.Lock()
-
-				onlineKernels = []*OnlineKernel{}
-				for _, kernel := range data["kernels"].([]interface{}) {
-					kernelMap := kernel.(map[string]interface{})
-					onlineKernels = append(onlineKernels, &OnlineKernel{
-						ID:       kernelMap["id"].(string),
-						Hostname: kernelMap["hostname"].(string),
-						OS:       kernelMap["os"].(string),
-						Ver:      kernelMap["ver"].(string),
-					})
-				}
-
-				onlineKernelsLock.Unlock()
-			}
-		}
-	}()
-}
+func closeSyncWebSocket()   {}
+func connectSyncWebSocket() {}
 
 var KernelID = gulu.Rand.String(7)
-
-func dialSyncWebSocket() (c *websocket.Conn, err error) {
-	endpoint := util.GetCloudWebSocketServer() + "/apis/siyuan/dejavu/ws"
-	header := http.Header{
-		"User-Agent":        []string{util.UserAgent},
-		"x-siyuan-uid":      []string{Conf.GetUser().UserId},
-		"x-siyuan-kernel":   []string{KernelID},
-		"x-siyuan-ver":      []string{util.Ver},
-		"x-siyuan-os":       []string{runtime.GOOS},
-		"x-siyuan-hostname": []string{util.GetDeviceName()},
-		"x-siyuan-repo":     []string{Conf.Sync.CloudName},
-	}
-	c, _, err = websocket.DefaultDialer.Dial(endpoint, header)
-	if err == nil {
-		closedSyncWebSocket.Store(false)
-	}
-	return
-}

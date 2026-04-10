@@ -20,6 +20,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/util"
 
 	"github.com/sashabaranov/go-openai"
@@ -44,12 +45,16 @@ type OpenAI struct {
 }
 
 func NewAI() *AI {
+	// Self-host fork: no default OpenAI base URL. The operator is expected to point the
+	// kernel at their own local inference endpoint via SIYUAN_OPENAI_API_BASE_URL (e.g.
+	// http://host.docker.internal:11434/v1 for Ollama). If the env var is unset, AI
+	// calls will fail at request time with a clear error, but the kernel still boots.
 	openAI := &OpenAI{
 		APITemperature: 1.0,
 		APIMaxContexts: 7,
 		APITimeout:     30,
 		APIModel:       openai.GPT3Dot5Turbo,
-		APIBaseURL:     "https://api.openai.com/v1",
+		APIBaseURL:     "",
 		APIUserAgent:   util.UserAgent,
 		APIProvider:    "OpenAI",
 	}
@@ -90,6 +95,10 @@ func NewAI() *AI {
 
 	if baseURL := os.Getenv("SIYUAN_OPENAI_API_BASE_URL"); "" != baseURL {
 		openAI.APIBaseURL = baseURL
+	}
+
+	if openAI.APIBaseURL == "" {
+		logging.LogWarnf("self-host: SIYUAN_OPENAI_API_BASE_URL is not set; AI features will be unavailable until it points at a local inference endpoint")
 	}
 
 	if userAgent := os.Getenv("SIYUAN_OPENAI_API_USER_AGENT"); "" != userAgent {

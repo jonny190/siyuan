@@ -704,22 +704,38 @@ func serveWebSocket(ginServer *gin.Engine) {
 
 	util.WebSocketServer.HandleConnect(func(s *melody.Session) {
 		//logging.LogInfof("ws check auth for [%s]", s.Request.RequestURI)
-		authOk := true
+		// Self-host fork: start closed by default. Upstream started with `authOk := true`
+		// and only checked cookie when AccessAuthCode was non-empty, which meant the /ws
+		// endpoint was wide open on any workspace where AccessAuthCode was unset. Every
+		// deployment of this fork runs behind the portal with a per-kernel AccessAuthCode
+		// and per-kernel API token, so we want WS parity with CheckAuth.
+		authOk := false
 
-		if "" != model.Conf.AccessAuthCode {
+		// 1) Authorization: Token <Conf.Api.Token> — how the portal reverse-proxy
+		// authenticates WS upgrades. Matches the HTTP path in kernel/model/session.go.
+		if authHeader := s.Request.Header.Get("Authorization"); authHeader != "" {
+			var token string
+			for _, prefix := range []string{"Token ", "token ", "Bearer ", "bearer "} {
+				if strings.HasPrefix(authHeader, prefix) {
+					token = strings.TrimPrefix(authHeader, prefix)
+					break
+				}
+			}
+			if token != "" && model.Conf.Api.Token != "" && token == model.Conf.Api.Token {
+				authOk = true
+			}
+		}
+
+		// 2) Cookie session (legacy browser-direct flow; still used for local dev).
+		if !authOk && "" != model.Conf.AccessAuthCode {
 			session, err := sessionStore.Get(s.Request, "siyuan")
 			if err != nil {
-				authOk = false
 				logging.LogErrorf("get cookie failed: %s", err)
 			} else {
 				val := session.Values["data"]
-				if nil == val {
-					authOk = false
-				} else {
+				if nil != val {
 					sess := &util.SessionData{}
-					err = gulu.JSON.UnmarshalJSON([]byte(val.(string)), sess)
-					if err != nil {
-						authOk = false
+					if err = gulu.JSON.UnmarshalJSON([]byte(val.(string)), sess); err != nil {
 						logging.LogErrorf("unmarshal cookie failed: %s", err)
 					} else {
 						workspaceSess := util.GetWorkspaceSession(sess)
@@ -729,7 +745,7 @@ func serveWebSocket(ginServer *gin.Engine) {
 			}
 		}
 
-		// REF: https://github.com/siyuan-note/siyuan/issues/11364
+		// 3) X-Auth-Token JWT used by the publish service. REF: https://github.com/siyuan-note/siyuan/issues/11364
 		if !authOk {
 			if token := model.ParseXAuthToken(s.Request); token != nil {
 				authOk = token.Valid && model.IsValidRole(model.GetClaimRole(model.GetTokenClaims(token)), []model.Role{

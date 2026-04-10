@@ -32,9 +32,7 @@ func StartCron() {
 	go every(7*time.Second, task.StatusJob)
 	go every(5*time.Second, model.SyncDataJob)
 	go every(2*time.Hour, model.StatJob)
-	go every(6*time.Hour, util.RefreshRhyResultJob, "RefreshRhyResultJob")
-	go every(2*time.Hour, model.RefreshCheckJob2H)
-	go every(6*time.Hour, model.RefreshCheckJob6H)
+	// Self-host fork: version-check, update-ping, and b3log Rhy cron jobs are removed.
 	go every(3*time.Second, model.FlushUpdateRefTextRenameDocJob)
 	go every(util.SQLFlushInterval, sql.FlushTxJob)
 	go every(util.SQLFlushInterval, sql.FlushHistoryTxJob)

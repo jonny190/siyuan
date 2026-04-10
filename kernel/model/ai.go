@@ -32,7 +32,7 @@ func ChatGPT(msg string) (ret string) {
 		return
 	}
 
-	return chatGPT(msg, false)
+	return chatGPT(msg)
 }
 
 func ChatGPTWithAction(ids []string, action string) (ret string) {
@@ -47,20 +47,20 @@ func ChatGPTWithAction(ids []string, action string) (ret string) {
 	}
 
 	msg := getBlocksContent(ids)
-	ret = chatGPTWithAction(msg, action, false)
+	ret = chatGPTWithAction(msg, action)
 	return
 }
 
 var cachedContextMsg []string
 
-func chatGPT(msg string, cloud bool) (ret string) {
+func chatGPT(msg string) (ret string) {
 	if "Clear context" == strings.TrimSpace(msg) {
 		// AI clear context action https://github.com/siyuan-note/siyuan/issues/10255
 		cachedContextMsg = nil
 		return
 	}
 
-	ret, retCtxMsgs, err := chatGPTContinueWrite(msg, cachedContextMsg, cloud)
+	ret, retCtxMsgs, err := chatGPTContinueWrite(msg, cachedContextMsg)
 	if err != nil {
 		return
 	}
@@ -68,19 +68,19 @@ func chatGPT(msg string, cloud bool) (ret string) {
 	return
 }
 
-func chatGPTWithAction(msg string, action string, cloud bool) (ret string) {
+func chatGPTWithAction(msg string, action string) (ret string) {
 	action = strings.TrimSpace(action)
 	if "" != action {
 		msg = action + ":\n\n" + msg
 	}
-	ret, _, err := chatGPTContinueWrite(msg, nil, cloud)
+	ret, _, err := chatGPTContinueWrite(msg, nil)
 	if err != nil {
 		return
 	}
 	return
 }
 
-func chatGPTContinueWrite(msg string, contextMsgs []string, cloud bool) (ret string, retContextMsgs []string, err error) {
+func chatGPTContinueWrite(msg string, contextMsgs []string) (ret string, retContextMsgs []string, err error) {
 	util.PushEndlessProgress("Requesting...")
 	defer util.ClearPushProgress(100)
 
@@ -88,12 +88,9 @@ func chatGPTContinueWrite(msg string, contextMsgs []string, cloud bool) (ret str
 		contextMsgs = contextMsgs[len(contextMsgs)-Conf.AI.OpenAI.APIMaxContexts:]
 	}
 
-	var gpt GPT
-	if cloud {
-		gpt = &CloudGPT{}
-	} else {
-		gpt = &OpenAIGPT{c: util.NewOpenAIClient(Conf.AI.OpenAI.APIKey, Conf.AI.OpenAI.APIProxy, Conf.AI.OpenAI.APIBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)}
-	}
+	// Self-host fork: cloud (b3log) AI has been removed. Always use the OpenAI-compatible
+	// client pointed at whatever SIYUAN_OPENAI_API_BASE_URL resolves to.
+	var gpt GPT = &OpenAIGPT{c: util.NewOpenAIClient(Conf.AI.OpenAI.APIKey, Conf.AI.OpenAI.APIProxy, Conf.AI.OpenAI.APIBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)}
 
 	buf := &bytes.Buffer{}
 	for i := 0; i < Conf.AI.OpenAI.APIMaxContexts; i++ {
@@ -173,11 +170,4 @@ type OpenAIGPT struct {
 
 func (gpt *OpenAIGPT) chat(msg string, contextMsgs []string) (partRet string, stop bool, err error) {
 	return util.ChatGPT(msg, contextMsgs, gpt.c, Conf.AI.OpenAI.APIModel, Conf.AI.OpenAI.APIMaxTokens, Conf.AI.OpenAI.APITemperature, Conf.AI.OpenAI.APITimeout)
-}
-
-type CloudGPT struct {
-}
-
-func (gpt *CloudGPT) chat(msg string, contextMsgs []string) (partRet string, stop bool, err error) {
-	return CloudChatGPT(msg, contextMsgs)
 }

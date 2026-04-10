@@ -467,7 +467,7 @@ func performSync(c *gin.Context) {
 		return
 	}
 	if mobileSwitch {
-		if nil == model.Conf.GetUser() || !model.Conf.Sync.Enabled {
+		if !model.Conf.Sync.Enabled {
 			return
 		}
 	}
@@ -494,71 +494,6 @@ func performBootSync(c *gin.Context) {
 	defer c.JSON(http.StatusOK, ret)
 	model.BootSyncData()
 	ret.Code = model.BootSyncSucc
-}
-
-func listCloudSyncDir(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	syncDirs, hSize, err := model.ListCloudSyncDir()
-	if err != nil {
-		ret.Code = 1
-		ret.Msg = err.Error()
-		ret.Data = map[string]any{"closeTimeout": 5000}
-		return
-	}
-
-	ret.Data = map[string]any{
-		"syncDirs":       syncDirs,
-		"hSize":          hSize,
-		"checkedSyncDir": model.Conf.Sync.CloudName,
-	}
-}
-
-func removeCloudSyncDir(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var name string
-	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("name", true, &name)) {
-		return
-	}
-	err := model.RemoveCloudSyncDir(name)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		ret.Data = map[string]any{"closeTimeout": 5000}
-		return
-	}
-
-	ret.Data = model.Conf.Sync.CloudName
-}
-
-func createCloudSyncDir(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var name string
-	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("name", true, &name)) {
-		return
-	}
-	err := model.CreateCloudSyncDir(name)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		ret.Data = map[string]any{"closeTimeout": 5000}
-		return
-	}
 }
 
 func setSyncGenerateConflictDoc(c *gin.Context) {
@@ -787,18 +722,3 @@ func setSyncProviderLocal(c *gin.Context) {
 	}
 }
 
-func setCloudSyncDir(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var name string
-	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("name", true, &name)) {
-		return
-	}
-	model.SetCloudSyncDir(name)
-}

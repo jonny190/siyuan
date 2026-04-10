@@ -263,19 +263,6 @@ func addCustomEmoji(name string, items *[]map[string]interface{}) {
 	model.AddCustomEmoji(nameWithoutExt, imgSrc)
 }
 
-func checkUpdate(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	showMsg := arg["showMsg"].(bool)
-	model.CheckUpdate(showMsg)
-}
-
 func exportLog(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -327,8 +314,6 @@ func exportConf(c *gin.Context) {
 	if nil != clonedConf.Export {
 		clonedConf.Export.PandocBin = ""
 	}
-	clonedConf.UserData = ""
-	clonedConf.Account = nil
 	clonedConf.AccessAuthCode = ""
 	if nil != clonedConf.System {
 		clonedConf.System.ID = ""
@@ -340,11 +325,9 @@ func exportConf(c *gin.Context) {
 		clonedConf.System.MicrosoftDefenderExcluded = false
 	}
 	clonedConf.Sync = nil
-	clonedConf.Stat = nil
 	clonedConf.Api = nil
 	clonedConf.Repo = nil
 	clonedConf.Publish = nil
-	clonedConf.CloudRegion = 0
 	clonedConf.DataIndexState = 0
 
 	data, err = gulu.JSON.MarshalIndentJSON(clonedConf, "", "  ")
@@ -521,7 +504,6 @@ func importConf(c *gin.Context) {
 	model.Conf.Search = importedConf.Search
 	model.Conf.Flashcard = importedConf.Flashcard
 	model.Conf.AI = importedConf.AI
-	model.Conf.Bazaar = importedConf.Bazaar
 	model.Conf.Save()
 
 	logging.LogInfof("imported conf")
@@ -538,7 +520,7 @@ func getConf(c *gin.Context) {
 		return
 	}
 
-	if !maskedConf.Sync.Enabled || (0 == maskedConf.Sync.Provider && !model.IsSubscriber()) {
+	if !maskedConf.Sync.Enabled {
 		maskedConf.Sync.Stat = model.Conf.Language(53)
 	}
 

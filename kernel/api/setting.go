@@ -133,35 +133,6 @@ func refreshVirtualBlockRef(c *gin.Context) {
 	util.BroadcastByType("main", "setConf", 0, "", model.Conf)
 }
 
-func setBazaar(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	param, err := gulu.JSON.MarshalJSON(arg)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	bazaar := &conf.Bazaar{}
-	if err = gulu.JSON.UnmarshalJSON(param, bazaar); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	model.Conf.Bazaar = bazaar
-	model.Conf.Save()
-
-	ret.Data = bazaar
-}
-
 func setAI(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -245,35 +216,6 @@ func setFlashcard(c *gin.Context) {
 	model.Conf.Save()
 
 	ret.Data = flashcard
-}
-
-func setAccount(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	param, err := gulu.JSON.MarshalJSON(arg)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	account := &conf.Account{}
-	if err = gulu.JSON.UnmarshalJSON(param, account); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	model.Conf.Account = account
-	model.Conf.Save()
-
-	ret.Data = model.Conf.Account
 }
 
 func setEditor(c *gin.Context) {
@@ -699,55 +641,6 @@ func getPublish(c *gin.Context) {
 			"publish": model.Conf.Publish,
 		}
 	}
-}
-
-func getCloudUser(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	if !model.IsAdminRoleContext(c) {
-		return
-	}
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	t := arg["token"]
-	var token string
-	if nil != t {
-		token = t.(string)
-	}
-	model.RefreshUser(token)
-	ret.Data = model.Conf.GetUser()
-}
-
-func logoutCloudUser(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	model.LogoutUser()
-}
-
-func login2faCloudUser(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	token := arg["token"].(string)
-	code := arg["code"].(string)
-	data, err := model.Login2fa(token, code)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-	ret.Data = data
 }
 
 func setEmoji(c *gin.Context) {

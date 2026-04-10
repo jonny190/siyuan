@@ -191,32 +191,6 @@ func diffRepoSnapshots(c *gin.Context) {
 	}
 }
 
-func getCloudSpace(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	sync, backup, hSize, hAssetSize, hTotalSize, exchangeSize, hTrafficUploadSize, hTrafficDownloadSize, htrafficAPIGet, hTrafficAPIPut, err := model.GetCloudSpace()
-	if err != nil {
-		ret.Code = 1
-		ret.Msg = err.Error()
-		util.PushErrMsg(err.Error(), 3000)
-		return
-	}
-
-	ret.Data = map[string]interface{}{
-		"sync":                 sync,
-		"backup":               backup,
-		"hAssetSize":           hAssetSize,
-		"hSize":                hSize,
-		"hTotalSize":           hTotalSize,
-		"hExchangeSize":        exchangeSize,
-		"hTrafficUploadSize":   hTrafficUploadSize,
-		"hTrafficDownloadSize": hTrafficDownloadSize,
-		"hTrafficAPIGet":       htrafficAPIGet,
-		"hTrafficAPIPut":       hTrafficAPIPut,
-	}
-}
-
 func checkoutRepo(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -231,52 +205,6 @@ func checkoutRepo(c *gin.Context) {
 		return
 	}
 	model.CheckoutRepo(id)
-}
-
-func downloadCloudSnapshot(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var id, tag string
-	if !util.ParseJsonArgs(arg, ret,
-		util.BindJsonArg("id", true, &id),
-		util.BindJsonArg("tag", true, &tag),
-	) {
-		return
-	}
-	if err := model.DownloadCloudSnapshot(tag, id); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-}
-
-func uploadCloudSnapshot(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var id, tag string
-	if !util.ParseJsonArgs(arg, ret,
-		util.BindJsonArg("id", true, &id),
-		util.BindJsonArg("tag", true, &tag),
-	) {
-		return
-	}
-	if err := model.UploadCloudSnapshot(tag, id); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
 }
 
 func getRepoSnapshots(c *gin.Context) {
@@ -302,71 +230,6 @@ func getRepoSnapshots(c *gin.Context) {
 		"snapshots":  snapshots,
 		"pageCount":  pageCount,
 		"totalCount": totalCount,
-	}
-}
-
-func getCloudRepoSnapshots(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var page float64
-	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("page", true, &page)) {
-		return
-	}
-
-	snapshots, pageCount, totalCount, err := model.GetCloudRepoSnapshots(int(page))
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	ret.Data = map[string]interface{}{
-		"snapshots":  snapshots,
-		"pageCount":  pageCount,
-		"totalCount": totalCount,
-	}
-}
-
-func getCloudRepoTagSnapshots(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	snapshots, err := model.GetCloudRepoTagSnapshots()
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	ret.Data = map[string]interface{}{
-		"snapshots": snapshots,
-	}
-}
-
-func removeCloudRepoTagSnapshot(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	arg, ok := util.JsonArg(c, ret)
-	if !ok {
-		return
-	}
-
-	var tag string
-	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("tag", true, &tag)) {
-		return
-	}
-	err := model.RemoveCloudRepoTag(tag)
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
 	}
 }
 
@@ -543,14 +406,3 @@ func purgeRepo(c *gin.Context) {
 	}
 }
 
-func purgeCloudRepo(c *gin.Context) {
-	ret := gulu.Ret.NewResult()
-	defer c.JSON(http.StatusOK, ret)
-
-	if err := model.PurgeCloud(); err != nil {
-		ret.Code = -1
-		ret.Msg = fmt.Sprintf(model.Conf.Language(201), err.Error())
-		ret.Data = map[string]interface{}{"closeTimeout": 5000}
-		return
-	}
-}
