@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SiYuan Portal - Login</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #0f1115;
+      --surface: #181b22;
+      --fg: #eceff5;
+      --muted: #8a93a6;
+      --accent: #4f8cff;
+      --danger: #ff5a4a;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+    h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+    .sub { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+    input[type=text], input[type=password] { width: 100%; padding: 10px 12px; background: #0b0d12; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+    input[type=text]:focus, input[type=password]:focus { outline: none; border-color: var(--accent); }
+    button { margin-top: 18px; width: 100%; padding: 11px 14px; background: var(--accent); color: white; border: 0; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    button:hover { filter: brightness(1.1); }
+    .error { margin-top: 14px; padding: 10px 12px; background: rgba(255,90,74,.12); border: 1px solid rgba(255,90,74,.35); color: var(--danger); border-radius: 6px; font-size: 13px; }
+    .foot { margin-top: 18px; color: var(--muted); font-size: 11px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <form class="card" method="post" action="/login">
+      <h1>SiYuan Portal</h1>
+      <p class="sub">Self-hosted knowledge workspace</p>
+
+      {{ if .Error }}
+      <div class="error">
+        {{ if eq .Error "creds" }}Invalid username or password.
+        {{ else if eq .Error "disabled" }}This account is disabled.
+        {{ else if eq .Error "rate" }}Too many attempts. Please wait a minute and try again.
+        {{ else }}Login failed.
+        {{ end }}
+      </div>
+      {{ end }}
+
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <input type="hidden" name="next" value="{{ .Next }}">
+      <button type="submit">Sign in</button>
+      <div class="foot">Your workspace lives on this server.</div>
+    </form>
+  </main>
+</body>
+</html>

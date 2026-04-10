@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SiYuan Portal - Admin</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #0f1115;
+      --surface: #181b22;
+      --surface-hi: #20242e;
+      --fg: #eceff5;
+      --muted: #8a93a6;
+      --accent: #4f8cff;
+      --accent-2: #3a6fd1;
+      --danger: #ff5a4a;
+      --ok: #4ade80;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--surface); }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header .actor { color: var(--muted); font-size: 12px; }
+    header form { display: inline; }
+    header button { background: none; border: 1px solid var(--border); color: var(--fg); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h2 { margin: 24px 0 12px; font-size: 15px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface-hi); font-weight: 600; font-size: 12px; text-transform: uppercase; color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .pill.admin { background: rgba(79,140,255,.18); color: var(--accent); }
+    .pill.user  { background: rgba(138,147,166,.18); color: var(--muted); }
+    .pill.running  { background: rgba(74,222,128,.15); color: var(--ok); }
+    .pill.stopped  { background: rgba(138,147,166,.15); color: var(--muted); }
+    .pill.failed   { background: rgba(255,90,74,.15); color: var(--danger); }
+    .pill.starting, .pill.stopping { background: rgba(79,140,255,.15); color: var(--accent); }
+    .pill.disabled { background: rgba(255,90,74,.15); color: var(--danger); margin-left: 6px; }
+    form.row { display: inline; }
+    form.row button { padding: 5px 10px; font-size: 12px; background: var(--surface-hi); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; margin-right: 4px; }
+    form.row button:hover { background: var(--accent); color: white; border-color: var(--accent); }
+    form.row button.danger:hover { background: var(--danger); border-color: var(--danger); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+    .card label { display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 8px 0 4px; }
+    .card input, .card select { width: 100%; padding: 8px 10px; background: #0b0d12; color: var(--fg); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+    .card .grid { display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 10px; align-items: end; }
+    .card .grid button { padding: 9px 16px; background: var(--accent); color: white; border: 0; border-radius: 5px; cursor: pointer; font-weight: 600; }
+    .flash { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    .flash.ok { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: var(--ok); }
+    .flash.err { background: rgba(255,90,74,.1); border: 1px solid rgba(255,90,74,.3); color: var(--danger); }
+    .audit { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+    .audit td { padding: 6px 14px; color: var(--muted); }
+    .audit td.action { color: var(--fg); }
+    .muted { color: var(--muted); }
+    code { background: #0b0d12; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SiYuan Portal &middot; Admin</h1>
+    <div>
+      <span class="actor">{{ .Actor.Username }}</span>
+      <form method="post" action="/logout" style="display:inline;margin-left:8px">
+        <button type="submit">Log out</button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    {{ if .Flash }}<div class="flash ok">{{ .Flash }}</div>{{ end }}
+    {{ if .Error }}<div class="flash err">{{ .Error }}</div>{{ end }}
+
+    <h2>Create user</h2>
+    <div class="card">
+      <form method="post" action="/admin">
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="csrf" value="{{ .CSRF }}">
+        <div class="grid">
+          <div>
+            <label for="username">Username</label>
+            <input id="username" name="username" required pattern="[a-z][a-z0-9_-]{1,31}" title="lowercase alphanumeric, _, -, 2-32 chars, must start with a letter">
+          </div>
+          <div>
+            <label for="password">Temporary password</label>
+            <input id="password" name="password" type="password" required minlength="8">
+          </div>
+          <div>
+            <label for="role">Role</label>
+            <select id="role" name="role">
+              <option value="user" selected>user</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <button type="submit">Create</button>
+        </div>
+      </form>
+    </div>
+
+    <h2>Users</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Kernel</th>
+          <th>Last active</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Users }}
+        <tr>
+          <td>{{ .ID }}</td>
+          <td>
+            {{ .Username }}
+            {{ if .Disabled }}<span class="pill disabled">disabled</span>{{ end }}
+          </td>
+          <td><span class="pill {{ .Role }}">{{ .Role }}</span></td>
+          <td><span class="pill {{ .KernelStatus }}">{{ .KernelStatus }}</span></td>
+          <td>
+            {{ if .LastActiveAt }}
+              <span class="muted">{{ .LastActiveAt.Format "2006-01-02 15:04" }}</span>
+            {{ else }}
+              <span class="muted">&mdash;</span>
+            {{ end }}
+          </td>
+          <td>
+            {{ if .Disabled }}
+              <form class="row" method="post" action="/admin">
+                <input type="hidden" name="action" value="enable">
+                <input type="hidden" name="csrf" value="{{ $.CSRF }}">
+                <input type="hidden" name="user_id" value="{{ .ID }}">
+                <button type="submit">Enable</button>
+              </form>
+            {{ else }}
+              <form class="row" method="post" action="/admin" onsubmit="return confirm('Disable {{ .Username }}?');">
+                <input type="hidden" name="action" value="disable">
+                <input type="hidden" name="csrf" value="{{ $.CSRF }}">
+                <input type="hidden" name="user_id" value="{{ .ID }}">
+                <button type="submit">Disable</button>
+              </form>
+            {{ end }}
+            <form class="row" method="post" action="/admin" onsubmit="return resetPwd(this);">
+              <input type="hidden" name="action" value="reset_password">
+              <input type="hidden" name="csrf" value="{{ $.CSRF }}">
+              <input type="hidden" name="user_id" value="{{ .ID }}">
+              <input type="hidden" name="new_password" value="">
+              <button type="submit">Reset&nbsp;PW</button>
+            </form>
+            <form class="row" method="post" action="/admin" onsubmit="return confirm('Delete {{ .Username }}? This stops and removes the kernel container but leaves the workspace on disk.');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="csrf" value="{{ $.CSRF }}">
+              <input type="hidden" name="user_id" value="{{ .ID }}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+
+    <h2>Recent activity</h2>
+    <table class="audit">
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th></tr></thead>
+      <tbody>
+        {{ range .Audit }}
+        <tr>
+          <td>{{ .At.Format "2006-01-02 15:04:05" }}</td>
+          <td>{{ if .ActorID }}#{{ .ActorID }}{{ else }}&mdash;{{ end }}</td>
+          <td class="action">{{ .Action }}</td>
+          <td>{{ .Target }}</td>
+          <td>{{ .IP }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    function resetPwd(form) {
+      var pw = prompt("New password (min 8 chars):");
+      if (!pw || pw.length < 8) return false;
+      form.new_password.value = pw;
+      return true;
+    }
+  </script>
+</body>
+</html>
