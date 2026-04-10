@@ -3,7 +3,6 @@ import {Menus} from "./menus";
 import {Model} from "./layout/Model";
 import {onGetConfig} from "./boot/onGetConfig";
 import {initBlockPopover} from "./block/popover";
-import {account} from "./config/account";
 import {addScript, addScriptSync} from "./protyle/util/addScript";
 import {genUUID} from "./util/genID";
 import {fetchGet, fetchPost} from "./util/fetch";
@@ -228,18 +227,18 @@ export class App {
                     window.siyuan.languages = lauguages;
                     window.siyuan.menus = new Menus(this);
                     bootSync();
-                    fetchPost("/api/setting/getCloudUser", {}, userResponse => {
-                        window.siyuan.user = userResponse.data;
-                        onGetConfig(response.data.start, this);
-                        account.onSetaccount();
-                        setTitle("", true);
-                        initMessage();
-                        /// #if BROWSER && !MOBILE
-                        if (!isInMobileApp() && !window.siyuan.config.readonly && !window.siyuan.isPublish && !isChromeBrowser()) {
-                            showMessage(window.siyuan.languages.useChrome, 0, "error");
-                        }
-                        /// #endif
-                    });
+                    // Self-host fork: no cloud-user lookup and no account panel init.
+                    // window.siyuan.user stays undefined; any UI that still references
+                    // it must be gated with a null check.
+                    window.siyuan.user = null;
+                    onGetConfig(response.data.start, this);
+                    setTitle("", true);
+                    initMessage();
+                    /// #if BROWSER && !MOBILE
+                    if (!isInMobileApp() && !window.siyuan.config.readonly && !window.siyuan.isPublish && !isChromeBrowser()) {
+                        showMessage(window.siyuan.languages.useChrome, 0, "error");
+                    }
+                    /// #endif
                 });
             });
         });
