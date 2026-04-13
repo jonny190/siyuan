@@ -82,8 +82,15 @@ services:
       - portal-db:/var/lib/portal
     ports:
       # Plain HTTP. Front this with a TLS-terminating reverse proxy in production.
-      - "8080:8080"
+      # Bound explicitly to 127.0.0.1 here; remove the IP prefix to listen on
+      # all interfaces if your TLS terminator runs on a different host.
+      - "127.0.0.1:8080:8080"
     networks:
+      # portal-public is the ONLY non-internal network the portal touches; it
+      # exists solely so port publishing works. Without it, Docker silently
+      # refuses to publish ports for containers attached only to internal
+      # networks (no warning, just empty PortBindings).
+      - portal-public
       - portal-admin
       - siyuan-net
 
@@ -97,6 +104,13 @@ services:
   # ------------------------------------------------------------------------
 
 networks:
+  # portal-public is non-internal and exists ONLY so the portal's published
+  # port reaches the host. Nothing else is attached. Required: Docker refuses
+  # to publish ports for containers attached only to internal networks.
+  portal-public:
+    name: portal-public
+    driver: bridge
+
   # portal-admin carries portal <-> docker-proxy traffic. Internal-only so the
   # docker-socket-proxy is unreachable from outside the stack.
   portal-admin:

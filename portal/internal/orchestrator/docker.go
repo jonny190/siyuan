@@ -78,10 +78,10 @@ func NewDockerClient(host string) (*DockerClient, error) {
 	}
 }
 
-// apiVersion pins the Docker Engine API version we target. 1.41 shipped with Docker 20.10
-// (November 2020), which is the oldest version we still care about supporting. Newer
-// daemons accept it via version negotiation.
-const apiVersion = "v1.41"
+// apiVersion pins the Docker Engine API version we target. 1.44 shipped with Docker 25.0
+// (January 2024). Docker Engine 28+ refuses negotiation with anything older. If you need
+// to support older daemons, lower this value.
+const apiVersion = "v1.44"
 
 // call performs a single Docker API request and decodes the response body into out (which
 // may be nil if the caller doesn't care about the body). A non-2xx response is turned
