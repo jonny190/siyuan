@@ -312,19 +312,14 @@ func (h *Handlers) adminCreateUser(w http.ResponseWriter, r *http.Request, actor
 		return
 	}
 
-	// Provision the workspace directory on the host. Kernel container itself is created
-	// lazily on first login.
+	// Provision the workspace directory on the host. This also seeds
+	// <workspace>/conf/conf.json with the per-user tokens so the kernel accepts
+	// the portal's Authorization: Token header on first boot. The kernel
+	// container itself is created lazily on first login.
 	if err := h.Orch.Provision(user); err != nil {
 		log.Printf("portal: provision user %d: %v", id, err)
 		http.Redirect(w, r, "/admin?error=provision", http.StatusSeeOther)
 		return
-	}
-
-	// Seed <workspace>/conf/conf.json with api.token so the kernel honors the
-	// portal's Authorization: Token header on first boot. See conf-seed.go.
-	if err := seedConfJSON(user.WorkspacePath, apiToken, authCode); err != nil {
-		log.Printf("portal: seed conf.json for user %d: %v", id, err)
-		// Non-fatal: the kernel can still be configured after first boot via the UI.
 	}
 
 	actorID := actor.ID

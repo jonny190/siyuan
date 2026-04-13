@@ -104,9 +104,15 @@ func (o *Orchestrator) KernelURL(user *users.User) string {
 	return "http://" + user.KernelContainer + ":6806"
 }
 
-// Provision prepares the host-side workspace directory for a new user. This is purely a
-// filesystem operation: the kernel container is created lazily on first EnsureRunning().
-// The caller (admin handler) has already written the users row.
+// Provision prepares the host-side workspace directory for a new user and seeds
+// <workspace>/conf/conf.json with the portal-generated api.token and accessAuthCode so
+// the kernel will accept the portal's injected Authorization: Token header on first boot.
+//
+// The kernel container itself is created lazily on first EnsureRunning(). The caller
+// (admin handler or bootstrap-admin path) has already written the users row.
+//
+// Both steps are idempotent: Provision on an existing workspace leaves conf.json
+// untouched so user preferences aren't clobbered.
 func (o *Orchestrator) Provision(user *users.User) error {
 	if err := os.MkdirAll(user.WorkspacePath, 0o755); err != nil {
 		return fmt.Errorf("create workspace dir %s: %w", user.WorkspacePath, err)
@@ -117,6 +123,13 @@ func (o *Orchestrator) Provision(user *users.User) error {
 		// chown typically fails when the portal runs as non-root without CAP_CHOWN.
 		// We do not treat this as fatal because operators can pre-create the dir.
 		fmt.Fprintf(os.Stderr, "portal: chown workspace %s: %v (non-fatal)\n", user.WorkspacePath, err)
+	}
+	// Seed conf.json so the kernel honors the portal's per-user Authorization token.
+	// This MUST happen inside Provision rather than at the caller because otherwise
+	// the bootstrap-admin path (which also calls Provision but skips downstream
+	// caller logic) would boot a kernel with a random api.token that nobody knows.
+	if err := seedConfJSON(user.WorkspacePath, user.KernelAPIToken, user.KernelAuthCode); err != nil {
+		return fmt.Errorf("seed conf.json: %w", err)
 	}
 	return nil
 }
@@ -132,6 +145,17 @@ func (o *Orchestrator) EnsureRunning(ctx context.Context, user *users.User) erro
 	lock.Lock()
 	defer lock.Unlock()
 
+	// Before any kernel boots (fresh create, or restarting a stopped container),
+	// ensure the on-disk conf.json has the portal's api.token. seedConfJSON is
+	// idempotent — a no-op when the file is already correct — so calling it
+	// unconditionally is cheap and protects against workspace drift (operator wiped
+	// conf.json, DB restored from a different backup, etc.). We skip it for the
+	// already-running case because the live kernel has already read the file into
+	// memory; rewriting under its feet would do nothing.
+	if err := os.MkdirAll(user.WorkspacePath, 0o755); err != nil {
+		return fmt.Errorf("ensure workspace dir: %w", err)
+	}
+
 	// 1) Inspect. If it's already running we're done.
 	info, err := o.docker.InspectContainer(ctx, user.KernelContainer)
 	switch {
@@ -141,7 +165,11 @@ func (o *Orchestrator) EnsureRunning(ctx context.Context, user *users.User) erro
 		return o.waitForBoot(ctx, user)
 
 	case err == nil && !info.State.Running:
-		// Exists but stopped/exited. Start it.
+		// Exists but stopped/exited. Reconcile conf.json before the kernel re-reads
+		// it on start, then start.
+		if err := seedConfJSON(user.WorkspacePath, user.KernelAPIToken, user.KernelAuthCode); err != nil {
+			return fmt.Errorf("reconcile conf.json before restart: %w", err)
+		}
 		_ = o.store.UpdateKernelStatus(ctx, user.ID, users.StatusStarting)
 		if err := o.docker.StartContainer(ctx, user.KernelContainer); err != nil {
 			_ = o.store.UpdateKernelStatus(ctx, user.ID, users.StatusFailed)
@@ -149,7 +177,8 @@ func (o *Orchestrator) EnsureRunning(ctx context.Context, user *users.User) erro
 		}
 
 	case IsNotFound(err):
-		// First-ever start (or container was removed). Create then start.
+		// First-ever start (or container was removed). createContainer does its own
+		// conf.json seed. Create then start.
 		_ = o.store.UpdateKernelStatus(ctx, user.ID, users.StatusStarting)
 		if err := o.createContainer(ctx, user); err != nil {
 			_ = o.store.UpdateKernelStatus(ctx, user.ID, users.StatusFailed)
@@ -176,7 +205,20 @@ func (o *Orchestrator) EnsureRunning(ctx context.Context, user *users.User) erro
 // createContainer issues the Docker CreateContainer call with the user-specific spec. The
 // bind mount, env vars, and the kernel CLI args (--workspace, --accessAuthCode, etc.) are
 // all filled in here.
+//
+// As a safety net, we also (re-)seed conf.json here. Provision does this at user-creation
+// time, but if a workspace is half-broken for any reason (operator wiped conf.json, older
+// portal version never wrote one, etc.) the kernel would boot with a random api.token and
+// the portal's Authorization: Token injection would fail. seedConfJSON is idempotent, so
+// calling it here is free when the file already exists.
 func (o *Orchestrator) createContainer(ctx context.Context, user *users.User) error {
+	if err := os.MkdirAll(user.WorkspacePath, 0o755); err != nil {
+		return fmt.Errorf("ensure workspace dir: %w", err)
+	}
+	if err := seedConfJSON(user.WorkspacePath, user.KernelAPIToken, user.KernelAuthCode); err != nil {
+		return fmt.Errorf("ensure conf.json: %w", err)
+	}
+
 	// Bind mount: host path -> /siyuan/workspace inside the container.
 	bind := fmt.Sprintf("%s:/siyuan/workspace", user.WorkspacePath)
 
