@@ -1,23 +1,15 @@
-import {showMessage} from "../dialog/message";
-import {getCloudURL} from "../config/util/about";
+// Self-host fork: the upstream kernel's subscription model is gone. Every feature that
+// used to be gated behind a b3log Pro subscription (cloud sync with third-party
+// providers, inbox, spaced-repetition cloud, etc.) is unconditionally available now.
+// Keeping the function signatures lets the rest of the app keep calling them without
+// needing a large-surface refactor.
 
-export const needSubscribe = (tip = window.siyuan.languages._kernel[29]) => {
-    if (window.siyuan.user && (window.siyuan.user.userSiYuanProExpireTime === -1 || window.siyuan.user.userSiYuanProExpireTime > 0)) {
-        return false;
-    }
-    if (tip) {
-        if (tip === window.siyuan.languages._kernel[29] && window.siyuan.config.system.container === "ios") {
-            showMessage(window.siyuan.languages._kernel[122]);
-        } else {
-            if (tip === window.siyuan.languages._kernel[29]) {
-                tip = window.siyuan.languages._kernel[29].replaceAll("${accountServer}", getCloudURL(""));
-            }
-            showMessage(tip);
-        }
-    }
-    return true;
+export const needSubscribe = (_tip?: string) => {
+    // No subscription is ever required.
+    return false;
 };
 
 export const isPaidUser = () => {
-    return window.siyuan.user && (0 === window.siyuan.user.userSiYuanSubscriptionStatus || 1 === window.siyuan.user.userSiYuanOneTimePayStatus);
+    // Every user of a self-hosted deployment has access to every feature.
+    return true;
 };

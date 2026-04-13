@@ -1,58 +1,23 @@
-import {isPaidUser, needSubscribe} from "../util/needSubscribe";
 import {fetchPost, fetchSyncPost} from "../util/fetch";
 import {showMessage} from "../dialog/message";
 import {bindSyncCloudListEvent, getSyncCloudList} from "../sync/syncGuide";
 import {processSync} from "../dialog/processSystem";
-import {getCloudURL} from "./util/about";
 import {openByMobile} from "../protyle/util/compatibility";
 import {confirmDialog} from "../dialog/confirmDialog";
 
 const renderProvider = (provider: number) => {
+    // Self-host fork: the upstream ProviderSiYuan (0) branch is gone. Existing
+    // workspaces with provider=0 get migrated to ProviderLocal (4) at kernel
+    // startup; we still guard against a stale value showing up here by falling
+    // through to a neutral message.
     if (provider === 0) {
-        if (needSubscribe("")) {
-            return `<div class="b3-label b3-label--inner">${window.siyuan.config.system.container === "ios" ? window.siyuan.languages._kernel[122] : window.siyuan.languages._kernel[29].replaceAll("${accountServer}", getCloudURL(""))}</div>
-<div class="b3-label b3-label--inner">
-    ${window.siyuan.languages.cloudIntro1}
-    <div class="b3-label__text">
-        <ul class="fn__list">
-            <li>${window.siyuan.languages.cloudIntro2}</li>
-            <li>${window.siyuan.languages.cloudIntro3}</li>
-            <li>${window.siyuan.languages.cloudIntro4}</li>
-            <li>${window.siyuan.languages.cloudIntro5}</li>
-            <li>${window.siyuan.languages.cloudIntro6}</li>
-            <li>${window.siyuan.languages.cloudIntro7}</li>
-            <li>${window.siyuan.languages.cloudIntro8}</li>
-        </ul>
-    </div>
-</div>
-<div class="b3-label b3-label--inner">
-    ${window.siyuan.languages.cloudIntro9}
-    <div class="b3-label__text">
-        <ul style="padding-left: 2em">
-            <li>${window.siyuan.languages.cloudIntro10}</li>
-            <li>${window.siyuan.languages.cloudIntro11}</li>
-        </ul>
-    </div>
-</div>`;
-        }
         return `<div class="b3-label b3-label--inner">
-    ${window.siyuan.languages.syncOfficialProviderIntro}
-</div>`;
-    }
-    if (!isPaidUser()) {
-        return `<div>
-    ${window.siyuan.languages["_kernel"][214].replaceAll("${accountServer}", getCloudURL(""))}
-</div>
-<div class="ft__error${provider == 4 ? "" : " fn__none"}">
-    <div class="fn__hr--b"></div>
-    ${window.siyuan.languages.mobileNotSupport}
+    Please choose a sync provider below (S3, WebDAV, or Local).
 </div>`;
     }
     if (provider === 2) {
         return `<div class="b3-label b3-label--inner">
     ${window.siyuan.languages.syncThirdPartyProviderS3Intro}
-    <div class="fn__hr"></div>
-    <em>${window.siyuan.languages.proFeature}</em>
     <div class="fn__hr"></div>
     ${window.siyuan.languages.syncThirdPartyProviderTip}
 </div>
@@ -129,8 +94,6 @@ const renderProvider = (provider: number) => {
         return `<div class="b3-label b3-label--inner">
     ${window.siyuan.languages.syncThirdPartyProviderWebDAVIntro}
     <div class="fn__hr"></div>
-    <em>${window.siyuan.languages.proFeature}</em>
-    <div class="fn__hr"></div>
     ${window.siyuan.languages.syncThirdPartyProviderTip}
 </div>
 <div class="b3-label b3-label--inner fn__flex">
@@ -191,8 +154,6 @@ const renderProvider = (provider: number) => {
     </div>
     <div class="fn__hr"></div>
     ${window.siyuan.languages.syncThirdPartyProviderLocalIntro}
-    <div class="fn__hr"></div>
-    <em>${window.siyuan.languages.proFeature}</em>
 </div>
 <div class="b3-label b3-label--inner fn__flex">
     <div class="fn__flex-center fn__size200">Endpoint</div>
@@ -214,9 +175,6 @@ const renderProvider = (provider: number) => {
 };
 
 const fillSyncProviderPanelValues = (panel: Element) => {
-    if (!isPaidUser()) {
-        return;
-    }
     const provider = window.siyuan.config.sync.provider;
     if (provider === 2) {
         const s3 = window.siyuan.config.sync.s3;
@@ -268,60 +226,12 @@ const bindProviderEvent = () => {
 
     const reposDataElement = repos.element.querySelector("#reposData");
     const loadingElement = repos.element.querySelector("#reposLoading");
-    if (window.siyuan.config.sync.provider === 0) {
-        if (needSubscribe("")) {
-            loadingElement.classList.add("fn__none");
-            let nextElement = reposDataElement;
-            while (nextElement) {
-                nextElement.classList.add("fn__none");
-                nextElement = nextElement.nextElementSibling;
-            }
-            return;
-        }
-        fetchPost("/api/cloud/getCloudSpace", {}, (response) => {
-            loadingElement.classList.add("fn__none");
-            if (response.code === 1) {
-                reposDataElement.innerHTML = response.msg;
-                return;
-            } else {
-                reposDataElement.innerHTML = `<div class="fn__flex">
-    <div class="fn__flex-1">
-        ${window.siyuan.languages.cloudStorage}
-        <div class="fn__hr"></div>
-        <ul class="b3-list" style="margin-left: 12px">
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.sync}<span class="b3-list-item__meta">${response.data.sync ? response.data.sync.hSize : "0B"}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.backup}<span class="b3-list-item__meta">${response.data.backup ? response.data.backup.hSize : "0B"}</span></li>
-            <li class="b3-list-item" style="cursor: auto;"><a href="${getCloudURL("settings/file?type=3")}" target="_blank">${window.siyuan.languages.cdn}</a><span class="b3-list-item__meta">${response.data.hAssetSize}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.total}<span class="b3-list-item__meta">${response.data.hSize}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.sizeLimit}<span class="b3-list-item__meta">${response.data.hTotalSize}</span></li>
-            <li class="b3-list-item" style="cursor: auto;"><a href="${getCloudURL("settings/point")}" target="_blank">${window.siyuan.languages.pointExchangeSize}</a><span class="b3-list-item__meta">${response.data.hExchangeSize}</span></li>
-        </ul>
-    </div>
-    <div class="fn__flex-1">
-        ${window.siyuan.languages.trafficStat}
-        <div class="fn__hr"></div>
-        <ul class="b3-list" style="margin-left: 12px">
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.upload}<span class="fn__space"></span><span class="ft__on-surface">${response.data.hTrafficUploadSize}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">${window.siyuan.languages.download}<span class="fn__space"></span><span class="ft__on-surface">${response.data.hTrafficDownloadSize}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">API GET<span class="fn__space"></span><span class="ft__on-surface">${response.data.hTrafficAPIGet}</span></li>
-            <li class="b3-list-item" style="cursor: auto;">API PUT<span class="fn__space"></span><span class="ft__on-surface">${response.data.hTrafficAPIPut}</span></li>
-        </ul>
-    </div>
-</div>`;
-            }
-        });
-        reposDataElement.classList.remove("fn__none");
-        return;
-    }
-
+    // Self-host fork: no cloud-space panel (no b3log account, no quota to display).
+    // The #reposData panel stays hidden; WebDAV/S3/Local provider settings live below.
     loadingElement.classList.add("fn__none");
     let nextElement = reposDataElement.nextElementSibling;
     while (nextElement) {
-        if (isPaidUser()) {
-            nextElement.classList.remove("fn__none");
-        } else {
-            nextElement.classList.add("fn__none");
-        }
+        nextElement.classList.remove("fn__none");
         nextElement = nextElement.nextElementSibling;
     }
     reposDataElement.classList.add("fn__none");
@@ -458,7 +368,6 @@ export const repos = {
     </div>
     <span class="fn__space"></span>
     <select id="syncProvider" class="b3-select fn__flex-center fn__size200">
-        <option value="0" ${window.siyuan.config.sync.provider === 0 ? "selected" : ""}>SiYuan</option>
         <option value="2" ${window.siyuan.config.sync.provider === 2 ? "selected" : ""}>S3</option>
         <option value="3" ${window.siyuan.config.sync.provider === 3 ? "selected" : ""}>WebDAV</option>
         <option class="${!["std", "docker"].includes(window.siyuan.config.system.container) ? "fn__none" : ""}" value="4" ${window.siyuan.config.sync.provider === 4 ? "selected" : ""}>${window.siyuan.languages.localFileSystem}</option>
@@ -589,11 +498,9 @@ export const repos = {
         const syncModeElement = repos.element.querySelector("#syncMode") as HTMLSelectElement;
         syncModeElement.addEventListener("change", () => {
             fetchPost("/api/sync/setSyncMode", {mode: parseInt(syncModeElement.value, 10)}, () => {
-                if (syncModeElement.value === "1" && window.siyuan.config.sync.provider === 0 && window.siyuan.config.system.container !== "docker") {
-                    syncPerceptionElement.parentElement.classList.remove("fn__none");
-                } else {
-                    syncPerceptionElement.parentElement.classList.add("fn__none");
-                }
+                // Self-host fork: sync perception (b3log multi-device push) is gone,
+                // so its toggle stays hidden regardless of mode/provider.
+                syncPerceptionElement.parentElement.classList.add("fn__none");
                 if (syncModeElement.value === "1") {
                     syncIntervalElement.parentElement.classList.remove("fn__none");
                 } else {
